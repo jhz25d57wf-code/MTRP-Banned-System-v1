@@ -7,7 +7,9 @@ const {
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder
 } = require('discord.js');
 
 const fs = require('node:fs');
@@ -25,13 +27,13 @@ const ALLOWED_ROLES = [
 ];
 
 const TEMP_BAN_ROLES = [
-  '1511773615866249367',
-  '1564225591299940493'
+  '1564225591299940493',
+  '1511773615866249367'
 ];
 
 const PERM_BAN_ROLES = [
-  '1564225792974524507',
-  '1511773617275277422'
+  '1511773617275277422',
+  '1564225792974524507'
 ];
 
 const LOG_CHANNELS = [
@@ -186,62 +188,56 @@ function createPanel() {
   const embed = new EmbedBuilder()
     .setTitle('🛡️ لوحة الرقابة الإدارية')
     .setDescription(
-      'اختر الإجراء المطلوب من الأزرار أدناه.\n\n' +
+      'اختر الإجراء المطلوب من القائمة أدناه.\n\n' +
       '🔶 محاسبة عضو: باند مؤقت.\n' +
       '🔴 باند نهائي: إضافة رتب الباند النهائي.\n' +
-      '🟢 فك باند: إزالة رتب الباند.\n' +
+      '🟢 فك باند مؤقت: إزالة رتب الباند المؤقت.\n' +
+      '🟢 فك باند نهائي: إزالة رتب الباند النهائي.\n' +
       '🔵 استدعاء عضو: إرسال تنبيه خاص.'
     )
     .setColor(0x263a63)
     .setFooter({ text: 'نظام الرقابة' });
 
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('open_temp')
-      .setLabel('محاسبة عضو')
-      .setStyle(ButtonStyle.Primary),
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('mod_action')
+    .setPlaceholder('اختر الإجراء المطلوب...')
+    .addOptions(
+      new StringSelectMenuOptionBuilder()
+        .setLabel('محاسبة عضو')
+        .setDescription('باند مؤقت')
+        .setValue('temp')
+        .setEmoji('🔶'),
 
-    new ButtonBuilder()
-      .setCustomId('open_permanent')
-      .setLabel('باند نهائي')
-      .setStyle(ButtonStyle.Danger)
-  );
+      new StringSelectMenuOptionBuilder()
+        .setLabel('باند نهائي')
+        .setDescription('إضافة رتب الباند النهائي')
+        .setValue('permanent')
+        .setEmoji('🔴'),
 
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('open_unban')
-      .setLabel('فك باند')
-      .setStyle(ButtonStyle.Success),
+      new StringSelectMenuOptionBuilder()
+        .setLabel('فك باند مؤقت')
+        .setDescription('إزالة رتب الباند المؤقت')
+        .setValue('untemp')
+        .setEmoji('🟢'),
 
-    new ButtonBuilder()
-      .setCustomId('open_summon')
-      .setLabel('استدعاء عضو')
-      .setStyle(ButtonStyle.Secondary)
-  );
+      new StringSelectMenuOptionBuilder()
+        .setLabel('فك باند نهائي')
+        .setDescription('إزالة رتب الباند النهائي')
+        .setValue('unperm')
+        .setEmoji('🟢'),
+
+      new StringSelectMenuOptionBuilder()
+        .setLabel('استدعاء عضو')
+        .setDescription('إرسال تنبيه خاص')
+        .setValue('summon')
+        .setEmoji('🔵')
+    );
+
+  const row = new ActionRowBuilder().addComponents(select);
 
   return {
     embeds: [embed],
-    components: [row1, row2]
-  };
-}
-
-function unbanMenu() {
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('open_unperm')
-      .setLabel('فك باند نهائي')
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId('open_untemp')
-      .setLabel('فك باند مؤقت')
-      .setStyle(ButtonStyle.Success)
-  );
-
-  return {
-    content: 'اختر نوع الباند الذي تريد فكّه:',
-    components: [row],
-    ephemeral: true
+    components: [row]
   };
 }
 
@@ -367,7 +363,7 @@ client.on('messageCreate', async message => {
 
 client.on('interactionCreate', async interaction => {
   try {
-    if (!interaction.isButton() && !interaction.isModalSubmit()) {
+    if (!interaction.isStringSelectMenu() && !interaction.isModalSubmit()) {
       return;
     }
 
@@ -389,29 +385,16 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    // فتح النماذج
-    if (interaction.isButton()) {
-      const buttons = {
-        open_temp: 'temp',
-        open_permanent: 'permanent',
-        open_untemp: 'untemp',
-        open_unperm: 'unperm',
-        open_summon: 'summon'
-      };
+    // فتح النماذج من القائمة
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId !== 'mod_action') return;
 
-      if (interaction.customId === 'open_unban') {
-        return interaction.reply(unbanMenu());
-      }
+      const type = interaction.values[0];
 
-      const type = buttons[interaction.customId];
-
-      if (type) {
-        return interaction.showModal(createModal(type));
-      }
-
-      return;
+      return interaction.showModal(createModal(type));
     }
 
+    // معالجة النماذج
     const type = interaction.customId.replace('form_', '');
 
     await interaction.deferReply({ ephemeral: true });
@@ -436,7 +419,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.editReply('❌ لا يمكن تطبيق هذا الإجراء على البوت.');
     }
 
-    // محاسبة عضو: باند مؤقت
+    // محاسبة عضو: باند مؤقت أو نهائي
     if (type === 'temp' || type === 'permanent') {
       let roles = type === 'temp' ? TEMP_BAN_ROLES : PERM_BAN_ROLES;
       let expiresAt = null;
